@@ -293,17 +293,27 @@
     <h2>👋 Selamat Datang!</h2>
     <p class="subtitle">Isi data kamu untuk memulai sesi onboarding yang dipersonalisasi.</p>
 
-    <div class="section-label">🔑 Gemini API Key</div>
+    <div class="section-label">🔑 API Key</div>
     <div class="form-row">
       <div class="form-group">
-        <label>API Key</label>
+        <label>Provider</label>
+        <select id="f-provider" style="border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:0.92rem;outline:none;font-family:inherit;background:#fff;">
+          <option value="auto">🔄 Auto (Node.js → Gemini fallback)</option>
+          <option value="gemini">🟢 Google Gemini (gratis, tanpa server)</option>
+          <option value="openai">🔵 OpenAI via Node.js server</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" id="apikey-row">
+      <div class="form-group">
+        <label id="apikey-label">Gemini API Key</label>
         <div class="api-key-wrapper">
           <input id="f-apikey" type="password" placeholder="AIza..." autocomplete="off" spellcheck="false" />
           <button class="toggle-key-btn" id="toggle-key-btn" type="button">Tampilkan</button>
         </div>
       </div>
     </div>
-    <p class="key-note">
+    <p class="key-note" id="apikey-note">
       Dapatkan API key <strong>gratis</strong> di <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> (tidak butuh billing).<br>
       Key hanya disimpan di memori browser sesi ini, tidak dikirim ke mana pun selain Google.
     </p>
@@ -432,7 +442,7 @@
     ]
   };
 
-  // Candidate model names — will be probed at startup; first working one is used
+  // Gemini config
   const GEMINI_CANDIDATES = [
     'gemini-2.5-flash',
     'gemini-2.5-flash-lite',
@@ -442,10 +452,14 @@
     'gemini-flash-lite-latest',
   ];
   const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-  let GEMINI_MODEL = null; // resolved at startup
+  let GEMINI_MODEL = null;
+
+  // Node.js server config
+  const SERVER_URL = 'http://localhost:3000';
 
   /* ── State ─────────────────────────────────────────────────── */
   let apiKey = '';
+  let activeProvider = 'gemini'; // 'openai' | 'gemini'
   let employee = {};
   let companyName = '';
   let messages = [];
@@ -474,12 +488,40 @@
     toggleKeyBtn.textContent = show ? 'Sembunyikan' : 'Tampilkan';
   });
 
+  /* ── Provider selector UI update ───────────────────────────── */
+  const providerSelect = document.getElementById('f-provider');
+  const apikeyRow      = document.getElementById('apikey-row');
+  const apikeyLabel    = document.getElementById('apikey-label');
+  const apikeyNote     = document.getElementById('apikey-note');
+
+  function updateProviderUI() {
+    const val = providerSelect.value;
+    if (val === 'openai') {
+      apikeyRow.style.display = 'none';
+      apikeyNote.innerHTML = '🔵 Menggunakan OpenAI via Node.js server di <code>localhost:3000</code>.<br>Pastikan server sudah berjalan dengan <code>npm start</code>.';
+    } else if (val === 'gemini') {
+      apikeyRow.style.display = '';
+      apikeyLabel.textContent = 'Gemini API Key';
+      apikeyInput.placeholder = 'AIza...';
+      apikeyNote.innerHTML = 'Dapatkan API key <strong>gratis</strong> di <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>.<br>Key hanya disimpan di memori browser sesi ini.';
+    } else {
+      // auto
+      apikeyRow.style.display = '';
+      apikeyLabel.textContent = 'Gemini API Key (untuk fallback)';
+      apikeyInput.placeholder = 'AIza... (opsional jika server berjalan)';
+      apikeyNote.innerHTML = '🔄 Coba Node.js server (<code>localhost:3000</code>) dulu. Kalau tidak aktif, otomatis pakai Gemini.<br>Isi Gemini key sebagai cadangan.';
+    }
+  }
+  providerSelect.addEventListener('change', updateProviderUI);
+  updateProviderUI();
+
   /* ── Setup form ────────────────────────────────────────────── */
   document.getElementById('f-start').valueAsDate = new Date();
 
   startBtn.addEventListener('click', async () => {
     setupError.style.display = 'none';
 
+    const provider = providerSelect.value;
     const key     = apikeyInput.value.trim();
     const name    = document.getElementById('f-name').value.trim();
     const role    = document.getElementById('f-role').value.trim();
@@ -489,8 +531,9 @@
     const manager = document.getElementById('f-manager').value.trim();
     const buddy   = document.getElementById('f-buddy').value.trim();
 
-    if (!key) {
-      showSetupError('API key wajib diisi. Dapatkan gratis di aistudio.google.com/apikey');
+    // Key required only for gemini or auto
+    if (provider !== 'openai' && !key) {
+      showSetupError('Gemini API key wajib diisi. Dapatkan gratis di aistudio.google.com/apikey');
       apikeyInput.focus();
       return;
     }
@@ -513,23 +556,73 @@
       buddy: buddy || 'HR Team',
     };
 
-    // Detect working model first, then open app
     startBtn.disabled = true;
-    startBtn.textContent = 'Mendeteksi model…';
-    const detected = await detectModel();
-    if (!detected) {
-      startBtn.disabled = false;
-      startBtn.textContent = 'Mulai Onboarding 🚀';
-      return;
+    startBtn.textContent = 'Mendeteksi provider…';
+
+    // Resolve which provider to actually use
+    if (provider === 'openai') {
+      const serverOk = await checkServer();
+      if (!serverOk) {
+        startBtn.disabled = false;
+        startBtn.textContent = 'Mulai Onboarding 🚀';
+        return;
+      }
+      activeProvider = 'openai';
+    } else if (provider === 'gemini') {
+      const detected = await detectModel();
+      if (!detected) {
+        startBtn.disabled = false;
+        startBtn.textContent = 'Mulai Onboarding 🚀';
+        return;
+      }
+      activeProvider = 'gemini';
+    } else {
+      // auto: try server first, fallback to gemini
+      const serverOk = await checkServer(true); // silent
+      if (serverOk) {
+        activeProvider = 'openai';
+      } else {
+        if (!key) {
+          showSetupError('Server tidak aktif dan Gemini API key tidak diisi. Isi key Gemini sebagai fallback.');
+          startBtn.disabled = false;
+          startBtn.textContent = 'Mulai Onboarding 🚀';
+          return;
+        }
+        const detected = await detectModel();
+        if (!detected) {
+          startBtn.disabled = false;
+          startBtn.textContent = 'Mulai Onboarding 🚀';
+          return;
+        }
+        activeProvider = 'gemini';
+      }
     }
 
     setupOverlay.style.display = 'none';
     appEl.style.display = 'flex';
-    headerStatus.textContent = `Halo, ${employee.name}! Siap membantu kamu hari ini 👋`;
+    const providerBadge = activeProvider === 'openai' ? '🔵 OpenAI' : `🟢 Gemini (${GEMINI_MODEL})`;
+    headerStatus.textContent = `Halo, ${employee.name}! Menggunakan ${providerBadge}`;
 
     renderChecklist();
     await fetchWelcome();
   });
+
+  /* ── Check Node.js server health ───────────────────────────── */
+  async function checkServer(silent = false) {
+    try {
+      const res = await fetch(`${SERVER_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: 'ping' }] }),
+        signal: AbortSignal.timeout(3000),
+      });
+      // Any response (even 500) means server is running
+      return true;
+    } catch (_) {
+      if (!silent) showSetupError('Server Node.js tidak aktif di localhost:3000. Jalankan "npm start" terlebih dahulu.');
+      return false;
+    }
+  }
 
   /* ── Auto-detect first working Gemini model ─────────────────── */
   async function detectModel() {
@@ -544,25 +637,16 @@
             generationConfig: { maxOutputTokens: 1 },
           }),
         });
-        // 400/404 = model not found, try next
         if (res.status === 404 || res.status === 400) continue;
-        // 401/403 = bad key — stop immediately
         if (res.status === 401 || res.status === 403) {
           showSetupError('API key tidak valid. Dapatkan key baru di aistudio.google.com/apikey');
           return false;
         }
-        // 429 = key valid but rate limited
-        if (res.status === 429) {
-          GEMINI_MODEL = candidate;
-          return true;
-        }
-        if (res.ok) {
-          GEMINI_MODEL = candidate;
-          return true;
-        }
+        if (res.status === 429) { GEMINI_MODEL = candidate; return true; }
+        if (res.ok) { GEMINI_MODEL = candidate; return true; }
       } catch (_) { continue; }
     }
-    showSetupError('Tidak ada model Gemini yang tersedia untuk API key ini. Periksa koneksi atau coba key lain.');
+    showSetupError('Tidak ada model Gemini yang tersedia. Periksa koneksi atau coba key lain.');
     return false;
   }
 
@@ -616,10 +700,34 @@ Untuk eskalasi, arahkan ke: **${employee.buddy}** (Human Buddy) atau HR langsung
 - Mulai sesi pertama dengan menyambut karyawan baru secara hangat.`;
   }
 
-  /* ── Call Gemini with auto-retry on 503 ─────────────────────── */
+  /* ── Unified AI call: OpenAI server OR Gemini direct ────────── */
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   async function callOpenAI(userMessages, maxTokens = 1024) {
+    if (activeProvider === 'openai') {
+      return callViaServer(userMessages);
+    }
+    return callViaGemini(userMessages, maxTokens);
+  }
+
+  /* OpenAI — routed through Node.js server */
+  async function callViaServer(userMessages) {
+    const res = await fetch(`${SERVER_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: userMessages, employee }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || `Server error HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    return data.reply;
+  }
+
+  /* Gemini — called directly from browser */
+  async function callViaGemini(userMessages, maxTokens = 1024) {
     const systemPrompt = buildSystemPrompt();
     const contents = [
       { role: 'user', parts: [{ text: systemPrompt }] },
@@ -636,7 +744,6 @@ Untuk eskalasi, arahkan ke: **${employee.buddy}** (Human Buddy) atau HR langsung
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 20000);
-
       let res;
       try {
         res = await fetch(url, {
@@ -655,28 +762,18 @@ Untuk eskalasi, arahkan ke: **${employee.buddy}** (Human Buddy) atau HR langsung
       }
       clearTimeout(timeout);
 
-      // Auth errors — no point retrying
       if (res.status === 400 || res.status === 401 || res.status === 403) {
         throw new Error('API key tidak valid. Muat ulang halaman dan masukkan key yang benar.');
       }
-      if (res.status === 429) {
-        throw new Error('Rate limit Gemini tercapai. Tunggu sebentar lalu coba lagi.');
-      }
-
-      // Server overload — retry with backoff
+      if (res.status === 429) throw new Error('Rate limit Gemini tercapai. Tunggu sebentar lalu coba lagi.');
       if (res.status === 503) {
-        if (attempt < MAX_RETRIES) {
-          await sleep(attempt * 2000); // 2s, 4s
-          continue;
-        }
+        if (attempt < MAX_RETRIES) { await sleep(attempt * 2000); continue; }
         throw new Error('Server Gemini sedang sibuk. Coba lagi dalam beberapa detik.');
       }
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err?.error?.message || `HTTP ${res.status}`);
       }
-
       const data = await res.json();
       return data.candidates[0].content.parts[0].text;
     }

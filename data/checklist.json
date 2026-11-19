@@ -1,0 +1,57 @@
+{
+  "phases": [
+    {
+      "phase": "Hari 1",
+      "label": "Day 1",
+      "items": [
+        "Perkenalan dengan tim dan manager",
+        "Setup akun email & akses tools utama (Slack, Jira, dll.)",
+        "Baca Company Handbook / Code of Conduct",
+        "Tur kantor (fisik atau virtual)",
+        "Meeting 1-on-1 pertama dengan Human Buddy"
+      ]
+    },
+    {
+      "phase": "Minggu 1",
+      "label": "Week 1",
+      "items": [
+        "Pelajari struktur tim dan alur kerja harian",
+        "Setup environment kerja / development environment",
+        "Baca dokumentasi produk atau layanan utama",
+        "Ikut satu sprint planning atau team meeting",
+        "Selesaikan pelatihan onboarding wajib (compliance, keamanan data)"
+      ]
+    },
+    {
+      "phase": "30 Hari",
+      "label": "Month 1",
+      "items": [
+        "Pahami OKR / KPI tim kamu",
+        "Selesaikan task atau project kecil pertama",
+        "1-on-1 dengan manager untuk review progres",
+        "Kenal minimal 5 orang dari tim/departemen lain",
+        "Identifikasi 3 area yang ingin kamu tingkatkan"
+      ]
+    },
+    {
+      "phase": "60 Hari",
+      "label": "Month 2",
+      "items": [
+        "Kontribusi mandiri pada project tim",
+        "Berikan feedback tentang proses onboarding ke HR",
+        "Mulai mentoring atau kolaborasi lintas tim",
+        "Review ulang target 30-hari bersama manager"
+      ]
+    },
+    {
+      "phase": "90 Hari",
+      "label": "Month 3",
+      "items": [
+        "Review performa awal bersama manager",
+        "Set target pribadi untuk kuartal berikutnya",
+        "Ajukan pertanyaan strategis tentang roadmap produk/perusahaan",
+        "Rayakan pencapaian 90 hari pertamamu! 🎉"
+      ]
+    }
+  ]
+}
